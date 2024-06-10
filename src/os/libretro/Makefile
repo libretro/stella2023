@@ -286,7 +286,6 @@ else ifneq (,$(filter $(platform), ngc wii wiiu))
    CXX = $(DEVKITPPC)/bin/powerpc-eabi-g++$(EXE_EXT)
    AR = $(DEVKITPPC)/bin/powerpc-eabi-ar$(EXE_EXT)
    CXXFLAGS += -mcpu=750 -meabi -mhard-float -DBLARGG_BIG_ENDIAN=1 -D__ppc__ -D__BIG_ENDIAN__ -DMSB_FIRST
-   CXXFLAGS += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
    STATIC_LINKING = 1
 
    # Nintendo WiiU
@@ -294,10 +293,10 @@ else ifneq (,$(filter $(platform), ngc wii wiiu))
       CXXFLAGS += -ffunction-sections -fdata-sections -D__wiiu__ -D__wut__
    # Nintendo Wii
    else ifneq (,$(findstring wii,$(platform)))
-      CXXFLAGS += -DGEKKO -mrvl
+      CXXFLAGS += -DGEKKO -mrvl -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
    # Nintendo Game Cube
    else ifneq (,$(findstring ngc,$(platform)))
-      CXXFLAGS += -DGEKKO -mrvl
+      CXXFLAGS += -DGEKKO -mrvl -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
    endif
 
 # Emscripten
