@@ -9,7 +9,7 @@
   variables:
     JNI_PATH: src/os/libretro
     MAKEFILE_PATH: src/os/libretro
-    CORENAME: stella
+    CORENAME: stella2023
 
 # Inclusion templates, required for the build to work
 include:
