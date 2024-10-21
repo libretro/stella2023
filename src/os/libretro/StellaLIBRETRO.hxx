@@ -55,7 +55,7 @@ class StellaLIBRETRO
     bool saveState(void* data, size_t size) const;
 
   public:
-    const char* getCoreName() const { return "Stella"; }
+    const char* getCoreName() const { return "Stella 2023"; }
     const char* getROMExtensions() const { return "a26|bin"; }
 
     void*  getROM() const { return rom_image.get(); }
