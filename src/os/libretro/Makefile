@@ -137,7 +137,9 @@ else ifneq (,$(findstring ios,$(platform)))
    else
       MINVERSION = -miphoneos-version-min=5.0
    endif
+   CFLAGS += $(MINVERSION)
    CXXFLAGS += $(MINVERSION)
+   SHARED += $(MINVERSION)
 
 # tvOS
 else ifeq ($(platform), tvos-arm64)
@@ -154,6 +156,10 @@ else ifeq ($(platform), tvos-arm64)
 
    CC  = cc -arch arm64 -isysroot $(IOSSDK)
    CXX = c++ -arch arm64 -isysroot $(IOSSDK)
+   MINVERSION = -mappletvos-version-min=11.0
+   CFLAGS += $(MINVERSION)
+   CXXFLAGS += $(MINVERSION)
+   SHARED += $(MINVERSION)
 
 # Nintendo Switch (libnx)
 else ifeq ($(platform), libnx)
