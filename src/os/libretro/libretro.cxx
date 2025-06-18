@@ -36,6 +36,9 @@ static int setting_stereo;
 static int setting_phosphor, setting_console, setting_phosphor_blend;
 static int stella_paddle_joypad_sensitivity;
 static int stella_paddle_analog_sensitivity;
+static int stella_paddle_mouse_sensitivity;
+static int stella_paddle_analog_deadzone;
+static bool stella_paddle_analog_absolute;
 static int setting_crop_hoverscan, crop_left;
 static NTSCFilter::Preset setting_filter;
 static const char* setting_palette;
@@ -58,6 +61,42 @@ uint32_t libretro_read_rom(void* data)
   return stella.getROMSize();
 }
 
+#define RETRO_ANALOG_COMMON() \
+  bool mouse_l     = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT); \
+  bool mouse_r     = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT); \
+  int32_t mouse_x  = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X); \
+  int32_t analog_x = input_state_cb(pad, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X); \
+  *input_bitmask  |= mouse_l << RETRO_DEVICE_ID_JOYPAD_B; \
+  if (stella_paddle_analog_deadzone && abs(analog_x) < stella_paddle_analog_deadzone * 0x7fff / 100) \
+    analog_x = 0; \
+  if (mouse_r) \
+    mouse_x *= 3; \
+
+static void retro_analog_paddle(unsigned pad, int32_t *analog_axis, int32_t *input_bitmask)
+{
+  RETRO_ANALOG_COMMON();
+
+  if (mouse_x)
+    *analog_axis += mouse_x * stella_paddle_mouse_sensitivity;
+  else if (!stella_paddle_analog_absolute)
+    *analog_axis += analog_x / 50;
+  else
+    *analog_axis  = analog_x;
+  *analog_axis = BSPF::clamp(*analog_axis, -0x7fff, 0x7fff);
+}
+
+static void retro_analog_wheel(unsigned pad, int32_t *analog_axis, int32_t *input_bitmask)
+{
+  RETRO_ANALOG_COMMON();
+
+  if (mouse_x)
+    *analog_axis = mouse_x * stella_paddle_mouse_sensitivity * 50;
+  else
+    *analog_axis = analog_x;
+
+  *analog_axis = BSPF::clamp(*analog_axis, -0x7fff, 0x7fff);
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 static void update_input()
 {
@@ -66,7 +105,8 @@ static void update_input()
 
 #define EVENT stella.setInputEvent
   int32_t input_bitmask[4];
-#define GET_BITMASK(pad) if (libretro_supports_bitmasks) \
+#define GET_BITMASK(pad) \
+    if (libretro_supports_bitmasks) \
       input_bitmask[(pad)] = input_state_cb((pad), RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK); \
     else \
     { \
@@ -88,33 +128,46 @@ static void update_input()
       MASK_EVENT(Event::LeftJoystickFire5, pad, RETRO_DEVICE_ID_JOYPAD_A);
       [[fallthrough]];
     case Controller::Type::Joystick:
-      MASK_EVENT(Event::LeftJoystickLeft, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
+      MASK_EVENT(Event::LeftJoystickLeft,  pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
       MASK_EVENT(Event::LeftJoystickRight, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-      MASK_EVENT(Event::LeftJoystickUp, pad, RETRO_DEVICE_ID_JOYPAD_UP);
-      MASK_EVENT(Event::LeftJoystickDown, pad, RETRO_DEVICE_ID_JOYPAD_DOWN);
-      MASK_EVENT(Event::LeftJoystickFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
+      MASK_EVENT(Event::LeftJoystickUp,    pad, RETRO_DEVICE_ID_JOYPAD_UP);
+      MASK_EVENT(Event::LeftJoystickDown,  pad, RETRO_DEVICE_ID_JOYPAD_DOWN);
+      MASK_EVENT(Event::LeftJoystickFire,  pad, RETRO_DEVICE_ID_JOYPAD_B);
       break;
 
     case Controller::Type::Driving:
-      MASK_EVENT(Event::LeftDrivingCCW, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
-      MASK_EVENT(Event::LeftDrivingCW, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    {
+      int32_t wheel = 0;
+
+      retro_analog_wheel(pad, &wheel, &input_bitmask[pad]);
+      EVENT(Event::LeftDrivingAnalog, wheel);
+      MASK_EVENT(Event::LeftDrivingCCW,  pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
+      MASK_EVENT(Event::LeftDrivingCW,   pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
       MASK_EVENT(Event::LeftDrivingFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
       break;
+    }
 
     case Controller::Type::Paddles:
+    {
+      static int32_t paddle_a = 0;
+      static int32_t paddle_b = 0;
+
+      retro_analog_paddle(pad, &paddle_a, &input_bitmask[pad]);
+      EVENT(Event::LeftPaddleAAnalog, paddle_a);
       MASK_EVENT(Event::LeftPaddleAIncrease, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
       MASK_EVENT(Event::LeftPaddleADecrease, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-      MASK_EVENT(Event::LeftPaddleAFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
-      EVENT(Event::LeftPaddleAAnalog, input_state_cb(pad, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X));
-      pad++;
+      MASK_EVENT(Event::LeftPaddleAFire,     pad, RETRO_DEVICE_ID_JOYPAD_B);
 
+      pad++;
       GET_BITMASK(pad)
+
+      retro_analog_paddle(pad, &paddle_b, &input_bitmask[pad]);
+      EVENT(Event::LeftPaddleBAnalog, paddle_b);
       MASK_EVENT(Event::LeftPaddleBIncrease, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
       MASK_EVENT(Event::LeftPaddleBDecrease, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-      MASK_EVENT(Event::LeftPaddleBFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
-      EVENT(Event::LeftPaddleBAnalog, input_state_cb(pad, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X));
+      MASK_EVENT(Event::LeftPaddleBFire,     pad, RETRO_DEVICE_ID_JOYPAD_B);
       break;
-
+    }
     case Controller::Type::Lightgun:
     {
       // scale from -0x8000..0x7fff to image rect
@@ -124,7 +177,7 @@ static void update_input()
 
       EVENT(Event::MouseAxisXValue, x);
       EVENT(Event::MouseAxisYValue, y);
-      EVENT(Event::MouseButtonLeftValue, input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER));
+      EVENT(Event::MouseButtonLeftValue,  input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER));
       EVENT(Event::MouseButtonRightValue, input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER));
       break;
     }
@@ -145,32 +198,46 @@ static void update_input()
       MASK_EVENT(Event::RightJoystickFire5, pad, RETRO_DEVICE_ID_JOYPAD_A);
       [[fallthrough]];
     case Controller::Type::Joystick:
-      MASK_EVENT(Event::RightJoystickLeft, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
+      MASK_EVENT(Event::RightJoystickLeft,  pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
       MASK_EVENT(Event::RightJoystickRight, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-      MASK_EVENT(Event::RightJoystickUp, pad, RETRO_DEVICE_ID_JOYPAD_UP);
-      MASK_EVENT(Event::RightJoystickDown, pad, RETRO_DEVICE_ID_JOYPAD_DOWN);
-      MASK_EVENT(Event::RightJoystickFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
+      MASK_EVENT(Event::RightJoystickUp,    pad, RETRO_DEVICE_ID_JOYPAD_UP);
+      MASK_EVENT(Event::RightJoystickDown,  pad, RETRO_DEVICE_ID_JOYPAD_DOWN);
+      MASK_EVENT(Event::RightJoystickFire,  pad, RETRO_DEVICE_ID_JOYPAD_B);
       break;
 
     case Controller::Type::Driving:
-      MASK_EVENT(Event::RightDrivingCCW, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
-      MASK_EVENT(Event::RightDrivingCW, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    {
+      int32_t wheel = 0;
+
+      retro_analog_wheel(pad, &wheel, &input_bitmask[pad]);
+      EVENT(Event::RightDrivingAnalog, wheel);
+      MASK_EVENT(Event::RightDrivingCCW,  pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
+      MASK_EVENT(Event::RightDrivingCW,   pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
       MASK_EVENT(Event::RightDrivingFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
       break;
+    }
 
     case Controller::Type::Paddles:
+    {
+      static int32_t paddle_a = 0;
+      static int32_t paddle_b = 0;
+
+      retro_analog_paddle(pad, &paddle_a, &input_bitmask[pad]);
+      EVENT(Event::RightPaddleAAnalog, paddle_a);
       MASK_EVENT(Event::RightPaddleAIncrease, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
       MASK_EVENT(Event::RightPaddleADecrease, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-      MASK_EVENT(Event::RightPaddleAFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
-      EVENT(Event::RightPaddleAAnalog, input_state_cb(pad, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X));
-      pad++;
+      MASK_EVENT(Event::RightPaddleAFire,     pad, RETRO_DEVICE_ID_JOYPAD_B);
 
+      pad++;
       GET_BITMASK(pad)
+
+      retro_analog_paddle(pad, &paddle_b, &input_bitmask[pad]);
+      EVENT(Event::RightPaddleBAnalog, paddle_b);
       MASK_EVENT(Event::RightPaddleBIncrease, pad, RETRO_DEVICE_ID_JOYPAD_LEFT);
       MASK_EVENT(Event::RightPaddleBDecrease, pad, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-      MASK_EVENT(Event::RightPaddleBFire, pad, RETRO_DEVICE_ID_JOYPAD_B);
-      EVENT(Event::RightPaddleBAnalog, input_state_cb(pad, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X));
+      MASK_EVENT(Event::RightPaddleBFire,     pad, RETRO_DEVICE_ID_JOYPAD_B);
       break;
+    }
 
     default:
       break;
@@ -388,6 +455,24 @@ static void update_variables(bool init = false)
     }
   }
 
+  RETRO_GET("stella_paddle_mouse_sensitivity")
+  {
+    stella_paddle_mouse_sensitivity = atoi(var.value);
+  }
+
+  RETRO_GET("stella_paddle_analog_deadzone")
+  {
+    stella_paddle_analog_deadzone = atoi(var.value);
+  }
+
+  RETRO_GET("stella_paddle_analog_absolute")
+  {
+    stella_paddle_analog_absolute = false;
+
+    if(!strcmp(var.value, "enabled"))
+      stella_paddle_analog_absolute = true;
+  }
+
   if(!init && !system_reset)
   {
     crop_left = setting_crop_hoverscan ? (stella.getVideoZoom() == 2 ? 26 : 8) : 0;
@@ -486,10 +571,6 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
     {
       case RETRO_DEVICE_NONE:
       case RETRO_DEVICE_JOYPAD:
-      case RETRO_DEVICE_ANALOG:
-      case RETRO_DEVICE_LIGHTGUN:
-      //case RETRO_DEVICE_KEYBOARD:
-      //case RETRO_DEVICE_MOUSE:
         input_devices[port] = device;
         break;
 
@@ -516,8 +597,11 @@ void retro_set_environment(retro_environment_t cb)
     { "stella_stereo", "Stereo sound; auto|off|on" },
     { "stella_phosphor", "Phosphor mode; auto|off|on" },
     { "stella_phosphor_blend", "Phosphor blend %; 60|65|70|75|80|85|90|95|100|0|5|10|15|20|25|30|35|40|45|50|55" },
+    { "stella_paddle_mouse_sensitivity", "Paddle mouse sensitivity; 10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|1|2|3|4|5|6|7|8|9" },
     { "stella_paddle_joypad_sensitivity", "Paddle joypad sensitivity; 3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|1|2" },
     { "stella_paddle_analog_sensitivity", "Paddle analog sensitivity; 20|21|22|23|24|25|26|27|28|29|30|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19" },
+    { "stella_paddle_analog_deadzone", "Paddle analog deadzone; 15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14" },
+    { "stella_paddle_analog_absolute", "Paddle analog absolute; disabled|enabled" },
     { NULL, NULL },
   };
 
@@ -537,101 +621,66 @@ void retro_init()
   libretro_supports_bitmasks = environ_cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, NULL);
 }
 
+static const struct retro_controller_description controllers[] = {
+    { "Automatic", RETRO_DEVICE_JOYPAD },
+    { "None", RETRO_DEVICE_NONE },
+    { NULL, 0 }
+};
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 bool retro_load_game(const struct retro_game_info *info)
 {
   enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
 
-  // Tell libretro we allow those 4 different types of devices for player 0
-  static const struct retro_controller_description player0_controller_description[] = {
-    { "None", RETRO_DEVICE_NONE },
-    { "Joystick", RETRO_DEVICE_JOYPAD },
-    { "Analog", RETRO_DEVICE_ANALOG },
-    { "Lightgun", RETRO_DEVICE_LIGHTGUN }
-  };
-  // Tell libretro we allow those 3 different types of devices for other players
-  static const struct retro_controller_description other_player_controller_description[] = {
-    { "None", RETRO_DEVICE_NONE },
-    { "Joystick", RETRO_DEVICE_JOYPAD },
-    { "Analog", RETRO_DEVICE_ANALOG }
-  };
-  // Tell libretro we allow those types for 4 players
-  static const struct retro_controller_info controller_infos[5] = {
-    { player0_controller_description, 4 },
-    { other_player_controller_description, 3 },
-    { other_player_controller_description, 3 },
-    { other_player_controller_description, 3 },
+  static const struct retro_controller_info controller_info[] = {
+    { controllers, sizeof(controllers) / sizeof(controllers[0]) },
+    { controllers, sizeof(controllers) / sizeof(controllers[0]) },
+    { controllers, sizeof(controllers) / sizeof(controllers[0]) },
+    { controllers, sizeof(controllers) / sizeof(controllers[0]) },
     { NULL, 0 }
   };
 
-  static const struct retro_input_descriptor desc[] = {
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "Trigger" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Fire" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Booster" },
+  #define RETRO_DESCRIPTOR_BLOCK(_user) \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Fire" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "Trigger" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Booster" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Reset" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "Left Difficulty A" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "Right Difficulty A" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "Left Difficulty B" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "Right Difficulty B" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,     "Color" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Black/White" }, \
+  { _user, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,   RETRO_DEVICE_ID_ANALOG_X, "Axis" } \
 
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Reset" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "Left Difficulty A" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "Right Difficulty A" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "Left Difficulty B" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "Right Difficulty B" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,     "Color" },
-    { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Black/White" },
+  #define RETRO_DESCRIPTOR_EXTRA_BLOCK(_user) \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" }, \
+  { _user, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Fire" }, \
+  { _user, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,   RETRO_DEVICE_ID_ANALOG_X, "Axis" } \
 
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "Trigger" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Fire" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Booster" },
-
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Reset" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "Left Difficulty A" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "Right Difficulty A" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "Left Difficulty B" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "Right Difficulty B" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,     "Color" },
-    { 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Black/White" },
-
-    { 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
-    { 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" },
-    { 2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Fire" },
-
-    { 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
-    { 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" },
-    { 3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Fire" },
-
-    { 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,   RETRO_DEVICE_ID_ANALOG_X, "Axis" },
-    { 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Button" },
-
-    { 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,   RETRO_DEVICE_ID_ANALOG_X, "Axis" },
-    { 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Button" },
-
-    { 2, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,   RETRO_DEVICE_ID_ANALOG_X, "Axis" },
-    { 2, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Button" },
-
-    { 3, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,   RETRO_DEVICE_ID_ANALOG_X, "Axis" },
-    { 3, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, RETRO_DEVICE_ID_JOYPAD_B, "Button" },
-
-    { 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X, "Screen X" },
-    { 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y, "Screen Y" },
-    { 0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER,  "Button" },
-
-    { 0, 0, 0, 0, NULL },
+  static struct retro_input_descriptor input_descriptors[] =
+  {
+    RETRO_DESCRIPTOR_BLOCK(0),
+    RETRO_DESCRIPTOR_BLOCK(1),
+    RETRO_DESCRIPTOR_EXTRA_BLOCK(2),
+    RETRO_DESCRIPTOR_EXTRA_BLOCK(3),
+    {0, 0, 0, 0, NULL},
   };
+  #undef RETRO_DESCRIPTOR_BLOCK
+  #undef RETRO_DESCRIPTOR_EXTRA_BLOCK
 
   if(!info || info->size > stella.getROMMax()) return false;
 
   // Send controller infos to libretro
-  environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)controller_infos);
+  environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)controller_info);
   // Send controller input descriptions to libretro
-  environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)desc);
+  environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_descriptors);
 
   if(!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt))
   {
