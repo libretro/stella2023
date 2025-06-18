@@ -61,6 +61,11 @@ uint32_t libretro_read_rom(void* data)
   return stella.getROMSize();
 }
 
+uint32_t libretro_get_rom_size(void)
+{
+  return stella.getROMSize();
+}
+
 #define RETRO_ANALOG_COMMON() \
   bool mouse_l     = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT); \
   bool mouse_r     = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT); \
