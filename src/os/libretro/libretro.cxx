@@ -475,7 +475,7 @@ static void update_variables(bool init = false)
 
   if(!init && !system_reset)
   {
-    crop_left = setting_crop_hoverscan ? (stella.getVideoZoom() == 2 ? 26 : 8) : 0;
+    crop_left = setting_crop_hoverscan ? (stella.getVideoZoom() == 2 ? 32 : 8) : 0;
 
     if(geometry_update) update_geometry();
   }
@@ -547,19 +547,19 @@ void retro_get_system_info(struct retro_system_info *info)
 void retro_get_system_av_info(struct retro_system_av_info *info)
 {
   *info = retro_system_av_info{};  // reset to defaults
+  unsigned crop_width         = crop_left ? 8 : 0;
 
   info->timing.fps            = stella.getVideoRate();
   info->timing.sample_rate    = stella.getAudioRate();
 
-  info->geometry.base_width   = stella.getRenderWidth() - crop_left *
-      (stella.getVideoZoom() == 1 ? 2 : 1);
+  info->geometry.base_width   = stella.getRenderWidth();
   info->geometry.base_height  = stella.getRenderHeight();
 
   info->geometry.max_width    = stella.getVideoWidthMax();
   info->geometry.max_height   = stella.getVideoHeightMax();
 
   info->geometry.aspect_ratio = stella.getVideoAspectPar() *
-      (float) info->geometry.base_width / (float) info->geometry.base_height;
+      (float)(160 - crop_width) * 2 / (float)stella.getVideoHeight();
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -591,9 +591,9 @@ void retro_set_environment(retro_environment_t cb)
     { "stella_console", "Console display; auto|ntsc|pal|secam|ntsc50|pal60|secam60" },
     { "stella_palette", "Palette colors; standard|z26|user|custom" },
     { "stella_filter", "TV effects; disabled|composite|s-video|rgb|badly adjusted" },
+    { "stella_crop_hoverscan", "Crop horizontal overscan; disabled|enabled" },
     { "stella_ntsc_aspect", "NTSC aspect %; par|100|101|102|103|104|105|106|107|108|109|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|50|75|76|77|78|79|80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99" },
     { "stella_pal_aspect", "PAL aspect %; par|100|101|102|103|104|105|106|107|108|109|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|50|75|76|77|78|79|80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99" },
-    { "stella_crop_hoverscan", "Crop horizontal overscan; disabled|enabled" },
     { "stella_stereo", "Stereo sound; auto|off|on" },
     { "stella_phosphor", "Phosphor mode; auto|off|on" },
     { "stella_phosphor_blend", "Phosphor blend %; 60|65|70|75|80|85|90|95|100|0|5|10|15|20|25|30|35|40|45|50|55" },
