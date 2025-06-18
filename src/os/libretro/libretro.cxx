@@ -567,7 +567,7 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
 {
   if(port < 4)
   {
-    switch (device)
+    switch(device)
     {
       case RETRO_DEVICE_NONE:
       case RETRO_DEVICE_JOYPAD:
@@ -575,8 +575,8 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
         break;
 
       default:
-        if (log_cb) log_cb(RETRO_LOG_ERROR, "%s\n", "[libretro]: Invalid device, setting type to RETRO_DEVICE_JOYPAD ...");
         input_devices[port] = RETRO_DEVICE_JOYPAD;
+        break;
     }
   }
 }
@@ -684,7 +684,7 @@ bool retro_load_game(const struct retro_game_info *info)
 
   if(!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt))
   {
-    if(log_cb) log_cb(RETRO_LOG_INFO, "[Stella]: XRGB8888 is not supported.\n");
+    if(log_cb) log_cb(RETRO_LOG_INFO, "XRGB8888 is not supported.\n");
     return false;
   }
 
@@ -720,17 +720,11 @@ void retro_run()
     return;
   }
 
-
   update_input();
-
-
   stella.runFrame();
 
   if(stella.getVideoResize())
     update_geometry();
-
-
-  //printf("retro_run - %d %d %d - %d\n", stella.getVideoWidth(), stella.getVideoHeight(), stella.getVideoPitch(), stella.getAudioSize() );
 
   if(stella.getVideoReady())
     video_cb(reinterpret_cast<uInt32*>(stella.getVideoBuffer()) + crop_left, stella.getVideoWidth() - crop_left, stella.getVideoHeight(), stella.getVideoPitch());
