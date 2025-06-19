@@ -334,6 +334,8 @@ void StellaLIBRETRO::setVideoFilter(NTSCFilter::Preset mode)
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 void StellaLIBRETRO::setVideoPalette(const string& mode)
 {
+  video_palette = mode;
+
   if (system_ready)
   {
     myOSystem->settings().setValue("palette", video_palette);
