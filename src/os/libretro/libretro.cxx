@@ -529,6 +529,15 @@ static void update_variables(bool init = false)
 #undef RETRO_GET
 }
 
+static const char *ControllerTypes[] =
+{
+  "Unknown",
+  "AmigaMouse", "AtariMouse", "AtariVox", "BoosterGrip", "CompuMate",
+  "Driving", "Genesis", "Joystick", "Keyboard", "KidVid", "MindLink",
+  "Paddles", "PaddlesIAxis", "PaddlesIAxDr", "SaveKey", "TrakBall",
+  "Lightgun", "QuadTari", "Joy2BPlus"
+};
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 static bool reset_system()
 {
@@ -544,6 +553,15 @@ static bool reset_system()
   // get auto-detect controllers
   input_type[0] = stella.getLeftControllerType();
   input_type[1] = stella.getRightControllerType();
+  if(log_cb)
+  {
+    int type;
+    type = (int)input_type[0];
+    log_cb(RETRO_LOG_INFO, "Detected port 1 controller type: %s.\n", ControllerTypes[type]);
+    type = (int)input_type[1];
+    log_cb(RETRO_LOG_INFO, "Detected port 2 controller type: %s.\n", ControllerTypes[type]);
+  }
+
   stella.setPaddleJoypadSensitivity(stella_paddle_joypad_sensitivity);
   stella.setPaddleAnalogSensitivity(stella_paddle_analog_sensitivity);
 
