@@ -39,6 +39,7 @@ static int stella_paddle_analog_sensitivity;
 static int stella_paddle_mouse_sensitivity;
 static int stella_paddle_analog_deadzone;
 static bool stella_paddle_analog_absolute;
+static bool stella_lightgun_crosshair;
 static int setting_crop_hoverscan, crop_left;
 static NTSCFilter::Preset setting_filter;
 static const char* setting_palette;
@@ -46,6 +47,7 @@ static const char* setting_palette;
 static bool system_reset;
 
 static unsigned input_devices[4];
+static int32_t input_crosshair[2];
 static Controller::Type input_type[2];
 
 
@@ -102,6 +104,50 @@ static void retro_analog_wheel(unsigned pad, int32_t *analog_axis, int32_t *inpu
   *analog_axis = BSPF::clamp(*analog_axis, -0x7fff, 0x7fff);
 }
 
+static void draw_crosshair(int16_t x, int16_t y, uint16_t color)
+{
+   int i;
+   int size       = 3;
+   int width      = stella.getVideoWidthMax();
+   int viewport_w = stella.getVideoWidth();
+   int viewport_h = stella.getVideoHeight();
+   uint8_t zoom   = stella.getVideoZoom();
+
+   /* crosshair center position */
+   uint32_t *ptr = (uint32_t *)stella.getVideoBuffer() + (y * width) + x;
+
+   /* default crosshair dimension */
+   int x_start = x - size * zoom;
+   int x_end   = x + size * zoom;
+   int y_start = y - size;
+   int y_end   = y + size;
+
+   if (zoom > 1)
+     x_end++;
+
+   /* off-screen */
+   if (x <= 0 || y <= 0)
+      return;
+
+   /* framebuffer limits */
+   if (x_start < 0) x_start = 0;
+   if (x_end > viewport_w) x_end = viewport_w;
+   if (y_start < 0) y_start = 0;
+   if (y_end > viewport_h) y_end = viewport_h;
+
+   /* draw crosshair */
+   for (i = (x_start - x); i <= (x_end - x); i++)
+   {
+      ptr[i] = (i & zoom) ? color : 0xffffff;
+   }
+   for (i = (y_start - y); i <= (y_end - y); i++)
+   {
+      ptr[i * width] = (i & 1) ? color : 0xffffff;
+      if (zoom > 1)
+        ptr[(i * width) + 1] = (i & 1) ? color : 0xffffff;
+   }
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 static void update_input()
 {
@@ -120,6 +166,8 @@ static void update_input()
           input_bitmask[(pad)] |= input_state_cb((pad), RETRO_DEVICE_JOYPAD, 0, i) ? (1 << i) : 0; \
     }
 #define MASK_EVENT(evt, pad, id) stella.setInputEvent((evt), (input_bitmask[(pad)] & (1 << id)) ? 1 : 0)
+
+  input_crosshair[0] = input_crosshair[1] = 0;
 
   int pad = 0;
   GET_BITMASK(pad)
@@ -177,9 +225,12 @@ static void update_input()
     case Controller::Type::Lightgun:
     {
       // scale from -0x8000..0x7fff to image rect
-      const Common::Rect& rect =  stella.getImageRect();
-      const Int32 x = (input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X) + 0x8000) * rect.w() / 0x10000;
-      const Int32 y = (input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y) + 0x8000) * rect.h() / 0x10000;
+      const Common::Rect& rect = stella.getImageRect();
+      const int32_t x = (input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X) + 0x7fff) * rect.w() / 0xffff;
+      const int32_t y = (input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y) + 0x7fff) * rect.h() / 0xffff;
+
+      input_crosshair[0] = x > 0 && x < 0x7fff ? x * stella.getVideoWidth() / rect.w() : 0;
+      input_crosshair[1] = y > 0 && y < 0x7fff ? y * stella.getVideoHeight() / rect.h() : 0;
 
       EVENT(Event::MouseAxisXValue, x);
       EVENT(Event::MouseAxisYValue, y);
@@ -519,6 +570,14 @@ static void update_variables(bool init = false)
       stella_paddle_analog_absolute = true;
   }
 
+  RETRO_GET("stella_lightgun_crosshair")
+  {
+    stella_lightgun_crosshair = false;
+
+    if(!strcmp(var.value, "enabled"))
+      stella_lightgun_crosshair = true;
+  }
+
   if(!init && !system_reset)
   {
     crop_left = setting_crop_hoverscan ? (stella.getVideoZoom() == 2 ? 32 : 8) : 0;
@@ -666,6 +725,7 @@ void retro_set_environment(retro_environment_t cb)
     { "stella_paddle_analog_sensitivity", "Paddle analog sensitivity; 20|21|22|23|24|25|26|27|28|29|30|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19" },
     { "stella_paddle_analog_deadzone", "Paddle analog deadzone; 15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14" },
     { "stella_paddle_analog_absolute", "Paddle analog absolute; disabled|enabled" },
+    { "stella_lightgun_crosshair", "Lightgun crosshair; disabled|enabled" },
     { NULL, NULL },
   };
 
@@ -786,6 +846,9 @@ void retro_run()
 
   update_input();
   stella.runFrame();
+
+  if(stella_lightgun_crosshair && input_crosshair[0] && input_crosshair[1])
+    draw_crosshair(input_crosshair[0], input_crosshair[1], 0x0000ff);
 
   if(stella.getVideoResize())
     update_geometry();
