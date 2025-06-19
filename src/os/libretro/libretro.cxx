@@ -173,6 +173,7 @@ static void update_input()
       MASK_EVENT(Event::LeftPaddleBFire,     pad, RETRO_DEVICE_ID_JOYPAD_B);
       break;
     }
+
     case Controller::Type::Lightgun:
     {
       // scale from -0x8000..0x7fff to image rect
@@ -184,6 +185,46 @@ static void update_input()
       EVENT(Event::MouseAxisYValue, y);
       EVENT(Event::MouseButtonLeftValue,  input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER));
       EVENT(Event::MouseButtonRightValue, input_state_cb(pad, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER));
+      break;
+    }
+
+    case Controller::Type::AmigaMouse:
+    case Controller::Type::AtariMouse:
+    case Controller::Type::TrakBall:
+    {
+      bool mouse_l     = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT);
+      bool mouse_r     = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT);
+      int32_t mouse_x  = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
+      int32_t mouse_y  = input_state_cb(pad, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+      int32_t analog_x = input_state_cb(pad, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+      int32_t analog_y = input_state_cb(pad, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+      float analog_mag = sqrt((analog_x * analog_x) + (analog_y * analog_y));
+
+      if (stella_paddle_analog_deadzone && analog_mag <= stella_paddle_analog_deadzone * 0x7fff / 100)
+        analog_x = analog_y = 0;
+
+      mouse_x += analog_x / (80000 / stella_paddle_analog_sensitivity);
+      mouse_y += analog_y / (80000 / stella_paddle_analog_sensitivity);
+
+      if (input_bitmask[pad] & (1 << RETRO_DEVICE_ID_JOYPAD_LEFT))
+        mouse_x -= stella_paddle_joypad_sensitivity;
+      else if (input_bitmask[pad] & (1 << RETRO_DEVICE_ID_JOYPAD_RIGHT))
+        mouse_x += stella_paddle_joypad_sensitivity;
+
+      if (input_bitmask[pad] & (1 << RETRO_DEVICE_ID_JOYPAD_UP))
+        mouse_y -= stella_paddle_joypad_sensitivity;
+      else if (input_bitmask[pad] & (1 << RETRO_DEVICE_ID_JOYPAD_DOWN))
+        mouse_y += stella_paddle_joypad_sensitivity;
+
+      if (input_bitmask[pad] & (1 << RETRO_DEVICE_ID_JOYPAD_B))
+        mouse_l = true;
+      if (input_bitmask[pad] & (1 << RETRO_DEVICE_ID_JOYPAD_A))
+        mouse_r = true;
+
+      EVENT(Event::MouseAxisXMove, mouse_x);
+      EVENT(Event::MouseAxisYMove, mouse_y);
+      EVENT(Event::MouseButtonLeftValue,  mouse_l);
+      EVENT(Event::MouseButtonRightValue, mouse_r);
       break;
     }
 
