@@ -41,6 +41,7 @@ static int stella_paddle_analog_deadzone;
 static bool stella_paddle_analog_absolute;
 static bool stella_lightgun_crosshair;
 static int setting_crop_hoverscan, crop_left;
+static int setting_crop_voverscan, crop_top;
 static NTSCFilter::Preset setting_filter;
 static const char* setting_palette;
 
@@ -415,6 +416,13 @@ static void update_variables(bool init = false)
     geometry_update = true;
   }
 
+  RETRO_GET("stella_crop_voverscan")
+  {
+    setting_crop_voverscan = atoi(var.value);
+
+    geometry_update = true;
+  }
+
   RETRO_GET("stella_ntsc_aspect")
   {
     int value = 0;
@@ -581,6 +589,7 @@ static void update_variables(bool init = false)
   if(!init && !system_reset)
   {
     crop_left = setting_crop_hoverscan ? (stella.getVideoZoom() == 2 ? 32 : 8) : 0;
+    crop_top  = setting_crop_voverscan;
 
     if(geometry_update) update_geometry();
   }
@@ -682,7 +691,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info)
   info->geometry.max_height   = stella.getVideoHeightMax();
 
   info->geometry.aspect_ratio = stella.getVideoAspectPar() *
-      (float)(160 - crop_width) * 2 / (float)stella.getVideoHeight();
+      (float)(160 - crop_width) * 2 / (float)(stella.getVideoHeight() - (crop_top * 2));
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -715,8 +724,9 @@ void retro_set_environment(retro_environment_t cb)
     { "stella_palette", "Palette colors; standard|z26|user|custom" },
     { "stella_filter", "TV effects; disabled|composite|s-video|rgb|badly adjusted" },
     { "stella_crop_hoverscan", "Crop horizontal overscan; disabled|enabled" },
-    { "stella_ntsc_aspect", "NTSC aspect %; par|100|101|102|103|104|105|106|107|108|109|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|50|75|76|77|78|79|80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99" },
-    { "stella_pal_aspect", "PAL aspect %; par|100|101|102|103|104|105|106|107|108|109|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|50|75|76|77|78|79|80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99" },
+    { "stella_crop_voverscan", "Crop vertical overscan; 0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24" },
+    { "stella_ntsc_aspect", "NTSC aspect %; par|100|101|102|103|104|105|106|107|108|109|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|75|76|77|78|79|80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99" },
+    { "stella_pal_aspect", "PAL aspect %; par|100|101|102|103|104|105|106|107|108|109|110|111|112|113|114|115|116|117|118|119|120|121|122|123|124|125|75|76|77|78|79|80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99" },
     { "stella_stereo", "Stereo sound; auto|off|on" },
     { "stella_phosphor", "Phosphor mode; auto|off|on" },
     { "stella_phosphor_blend", "Phosphor blend %; 60|65|70|75|80|85|90|95|100|0|5|10|15|20|25|30|35|40|45|50|55" },
@@ -854,7 +864,10 @@ void retro_run()
     update_geometry();
 
   if(stella.getVideoReady())
-    video_cb(reinterpret_cast<uInt32*>(stella.getVideoBuffer()) + crop_left, stella.getVideoWidth() - crop_left, stella.getVideoHeight(), stella.getVideoPitch());
+    video_cb(reinterpret_cast<uInt32*>(stella.getVideoBuffer()) + crop_left + (crop_top * stella.getVideoWidthMax()),
+        stella.getVideoWidth() - crop_left,
+        stella.getVideoHeight() - crop_top * 2,
+        stella.getVideoPitch());
 
   if(stella.getAudioReady())
     audio_batch_cb(stella.getAudioBuffer(), stella.getAudioSize());
