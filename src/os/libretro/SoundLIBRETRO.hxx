@@ -52,8 +52,6 @@ class SoundLIBRETRO : public Sound
       : Sound(osystem),
         myAudioSettings{audioSettings}
     {
-      Logger::debug("SoundLIBRETRO::SoundLIBRETRO started ...");
-      Logger::debug("SoundLIBRETRO::SoundLIBRETRO initialized");
     }
     ~SoundLIBRETRO() override = default;
 
@@ -67,15 +65,11 @@ class SoundLIBRETRO : public Sound
     {
       myEmulationTiming = emulationTiming;
 
-      Logger::debug("SoundLIBRETRO::open started ...");
-
       audioQueue->ignoreOverflows(!myAudioSettings.enabled());
 
       myAudioQueue = audioQueue;
       myUnderrun = true;
       myCurrentFragment = nullptr;
-
-      Logger::debug("SoundLIBRETRO::open finished");
 
       myIsInitializedFlag = true;
     }
@@ -89,8 +83,9 @@ class SoundLIBRETRO : public Sound
     void dequeue(Int16* stream, uInt32* samples)
     {
       uInt32 outIndex = 0;
+      uInt32 frame    = myAudioSettings.sampleRate() / myOSystem.console().gameRefreshRate();
 
-      while (myAudioQueue->size())
+      while (myAudioQueue->size() && outIndex <= frame)
       {
         Int16* nextFragment = myAudioQueue->dequeue(myCurrentFragment);
 
