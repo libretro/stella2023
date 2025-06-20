@@ -658,5 +658,5 @@ endif
 	$(CC) $(INCFLAGS) -c $(OBJOUT)$@ $<
 
 clean:
-	rm -f $(OBJECTS) *.d $(TARGET)
+	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET)
 endif
