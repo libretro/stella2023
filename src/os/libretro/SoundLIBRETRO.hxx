@@ -89,8 +89,9 @@ class SoundLIBRETRO : public Sound
     void dequeue(Int16* stream, uInt32* samples)
     {
       uInt32 outIndex = 0;
+      uInt32 frame    = myAudioSettings.sampleRate() / myOSystem.console().gameRefreshRate();
 
-      while (myAudioQueue->size())
+      while (myAudioQueue->size() && outIndex <= frame)
       {
         Int16* nextFragment = myAudioQueue->dequeue(myCurrentFragment);
 
