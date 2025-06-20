@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #ifdef _MSC_VER
 #define snprintf _snprintf
@@ -51,6 +52,26 @@ static unsigned input_devices[4];
 static int32_t input_crosshair[2];
 static Controller::Type input_type[2];
 
+void libretro_logger(int log_level, const char *source)
+{
+  retro_log_level log_mode = RETRO_LOG_INFO;
+  char *string = strdup(source);
+  char *token  = strtok(string, "\n");
+
+  switch (log_level)
+  {
+    case 2: log_mode = RETRO_LOG_DEBUG; break;
+    case 0: log_mode = RETRO_LOG_ERROR; break;
+  }
+
+  while (token != NULL)
+  {
+    log_cb(log_mode, "%s\n", token);
+    token = strtok(NULL, "\n");
+  }
+  free(string);
+  string = NULL;
+}
 
 // TODO input:
 // https://github.com/libretro/blueMSX-libretro/blob/master/libretro.c
@@ -597,15 +618,6 @@ static void update_variables(bool init = false)
 #undef RETRO_GET
 }
 
-static const char *ControllerTypes[] =
-{
-  "Unknown",
-  "AmigaMouse", "AtariMouse", "AtariVox", "BoosterGrip", "CompuMate",
-  "Driving", "Genesis", "Joystick", "Keyboard", "KidVid", "MindLink",
-  "Paddles", "PaddlesIAxis", "PaddlesIAxDr", "SaveKey", "TrakBall",
-  "Lightgun", "QuadTari", "Joy2BPlus"
-};
-
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 static bool reset_system()
 {
@@ -621,15 +633,6 @@ static bool reset_system()
   // get auto-detect controllers
   input_type[0] = stella.getLeftControllerType();
   input_type[1] = stella.getRightControllerType();
-  if(log_cb)
-  {
-    int type;
-    type = (int)input_type[0];
-    log_cb(RETRO_LOG_INFO, "Detected port 1 controller type: %s.\n", ControllerTypes[type]);
-    type = (int)input_type[1];
-    log_cb(RETRO_LOG_INFO, "Detected port 2 controller type: %s.\n", ControllerTypes[type]);
-  }
-
   stella.setPaddleJoypadSensitivity(stella_paddle_joypad_sensitivity);
   stella.setPaddleAnalogSensitivity(stella_paddle_analog_sensitivity);
 
@@ -743,13 +746,23 @@ void retro_set_environment(retro_environment_t cb)
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+static void fallback_log(enum retro_log_level level, const char *fmt, ...)
+{
+  (void)level;
+  va_list va;
+  va_start(va, fmt);
+  vfprintf(stderr, fmt, va);
+  va_end(va);
+}
+
 void retro_init()
 {
   struct retro_log_callback log;
   unsigned level = 4;
 
-  log_cb = NULL;
-  if(environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log)) log_cb = log.log;
+  log_cb = fallback_log;
+  if(environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
+    log_cb = log.log;
 
   environ_cb(RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL, &level);
   libretro_supports_bitmasks = environ_cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, NULL);
