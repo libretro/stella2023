@@ -591,7 +591,7 @@ else
 endif
 
 CXXFLAGS += $(CODE_DEFINES) $(WARNINGS_DEFINES) $(fpic)
-CXXFLAGS += -D__LIB_RETRO__ -DSOUND_SUPPORT
+CXXFLAGS += -D__LIB_RETRO__ -DSOUND_SUPPORT -MMD
 CXXFLAGS += -DHAVE_STDINT_H
 
 ifeq (,$(findstring msvc,$(platform)))
@@ -636,6 +636,8 @@ info:
 
 all: $(TARGET)
 
+-include $(OBJECTS:.o=.d))
+
 $(TARGET): $(OBJECTS)
 ifeq ($(STATIC_LINKING), 1)
 	$(AR) rcs $@ $(OBJECTS)
@@ -656,5 +658,5 @@ endif
 	$(CC) $(INCFLAGS) -c $(OBJOUT)$@ $<
 
 clean:
-	rm -f $(OBJECTS) $(TARGET)
+	rm -f $(OBJECTS) *.d $(TARGET)
 endif
