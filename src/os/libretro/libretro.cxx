@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include <string.h>
 
 #ifdef _MSC_VER
 #define snprintf _snprintf
@@ -56,8 +55,15 @@ static Controller::Type input_type[2];
 void libretro_logger(int log_level, const char *source)
 {
   retro_log_level log_mode = RETRO_LOG_INFO;
-  char *string = strdup(source);
-  char *token  = strtok(string, "\n");
+  size_t size  = strlen(source);
+  char *string = (char*)malloc(size + 1);
+  char *token;
+
+  if (!string)
+     return;
+
+  strcpy(string, source);
+  token = strtok(string, "\n");
 
   switch (log_level)
   {
@@ -70,6 +76,7 @@ void libretro_logger(int log_level, const char *source)
     log_cb(log_mode, "%s\n", token);
     token = strtok(NULL, "\n");
   }
+
   free(string);
   string = NULL;
 }
