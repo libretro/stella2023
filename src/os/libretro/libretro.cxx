@@ -48,6 +48,59 @@ static const char* setting_palette;
 
 static bool system_reset;
 
+// DC-blocking high-pass filter state.
+//
+// The TIA audio is unipolar: the mixing table maps volume 0..vMax to
+// 0..0x7fff (Audio::mixingTableEntry), so a sample is 0 for silence and
+// positive for any sound -- never negative. That leaves a large,
+// sound-dependent DC offset (measured ~19% of full scale) that thumps on
+// playback chains reproducing sub-bass. A one-pole high-pass with a
+// ~20 Hz cutoff removes it while leaving game tones (>=100 Hz) untouched:
+//   y[n] = x[n] - x[n-1] + R*y[n-1],  R = 0.996 (Q16 = 65274) at 31.4 kHz.
+// State is per channel, carried across frames, and reset on load.
+static int32_t dc_block_x_prev_l, dc_block_y_prev_l;
+static int32_t dc_block_x_prev_r, dc_block_y_prev_r;
+#define DC_BLOCK_R 65274
+
+static void dc_block_reset()
+{
+  dc_block_x_prev_l = dc_block_y_prev_l = 0;
+  dc_block_x_prev_r = dc_block_y_prev_r = 0;
+}
+
+// Interleaved stereo (L,R,...); 'frames' is the number of stereo pairs.
+// The recurrence y[n] = x[n] - x[n-1] + R*y[n-1] is a feedback loop, so it
+// does not vectorise along the sample axis; the two channels are the only
+// independent axis but the TIA duplicates mono into L and R, so there is
+// no useful SSE2/NEON form -- the scalar loop is correct and off the hot
+// path (one pass over the frame's ~525 samples).
+static void dc_block_filter(Int16* buf, uInt32 frames)
+{
+  int32_t xl = dc_block_x_prev_l, yl = dc_block_y_prev_l;
+  int32_t xr = dc_block_x_prev_r, yr = dc_block_y_prev_r;
+
+  for(uInt32 i = 0; i < frames; ++i)
+  {
+    int32_t inl = buf[2*i], inr = buf[2*i + 1];
+    int32_t outl = static_cast<int32_t>(inl - xl +
+                     ((static_cast<int64_t>(DC_BLOCK_R) * yl) >> 16));
+    int32_t outr = static_cast<int32_t>(inr - xr +
+                     ((static_cast<int64_t>(DC_BLOCK_R) * yr) >> 16));
+
+    if(outl >  32767) outl =  32767; else if(outl < -32768) outl = -32768;
+    if(outr >  32767) outr =  32767; else if(outr < -32768) outr = -32768;
+
+    buf[2*i]     = static_cast<Int16>(outl);
+    buf[2*i + 1] = static_cast<Int16>(outr);
+
+    xl = inl; yl = outl;
+    xr = inr; yr = outr;
+  }
+
+  dc_block_x_prev_l = xl; dc_block_y_prev_l = yl;
+  dc_block_x_prev_r = xr; dc_block_y_prev_r = yr;
+}
+
 static unsigned input_devices[4];
 static int32_t input_crosshair[2];
 static Controller::Type input_type[2];
@@ -646,6 +699,9 @@ static bool reset_system()
 
   system_reset = false;
 
+  // reset the DC-blocker so cold-start audio output is reproducible
+  dc_block_reset();
+
   // reset libretro window, apply post-boot settings
   update_variables(false);
 
@@ -891,7 +947,11 @@ void retro_run()
         stella.getVideoPitch());
 
   if(stella.getAudioReady())
+  {
+    // Remove the TIA's unipolar DC offset before output.
+    dc_block_filter(stella.getAudioBuffer(), stella.getAudioSize());
     audio_batch_cb(stella.getAudioBuffer(), stella.getAudioSize());
+  }
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
